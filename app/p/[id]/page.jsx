@@ -1,4 +1,5 @@
 import { redirect, notFound } from "next/navigation";
+import { FieldValue } from "firebase-admin/firestore";
 import { db } from "@/lib/firebase-admin";
 
 export const dynamic = "force-dynamic";
@@ -25,12 +26,13 @@ export default async function RedirectPage({ params }) {
     notFound();
   }
 
-  const snapshot = await db
+  const ref = db
     .collection("PLACAS")
     .doc(categoria)
     .collection("links")
-    .doc(normalizedId)
-    .get();
+    .doc(normalizedId);
+
+  const snapshot = await ref.get();
 
   if (!snapshot.exists) {
     notFound();
@@ -42,7 +44,7 @@ export default async function RedirectPage({ params }) {
     notFound();
   }
 
-  // Segurança básica contra destinos inválidos
+  // Valida a URL
   let url;
 
   try {
@@ -55,5 +57,12 @@ export default async function RedirectPage({ params }) {
     notFound();
   }
 
+  // CONTADOR DE ACESSOS
+  await ref.update({
+    acessos: FieldValue.increment(1),
+    ultimoAcesso: FieldValue.serverTimestamp(),
+  });
+
+  // Redireciona
   redirect(url.toString());
 }
