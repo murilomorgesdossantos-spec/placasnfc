@@ -1,56 +1,59 @@
-import { redirect } from 'next/navigation';
+import { redirect, notFound } from "next/navigation";
+import { db } from "@/lib/firebase-admin";
 
-export default async function RedirecionamentoPlaca({ params }) {
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+export default async function RedirectPage({ params }) {
   const { id } = await params;
-  
-  // O seu link real da planilha
-  const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRZWA_Yc_ffltk_pBWfJwz20LV24d7VjCWkOhnCCrRal-u674BhsremfORndmyAPyRXrlyZ7sQYyO3t/pub?gid=0&single=true&output=csv';
 
-  let linkDestino = null;
-  let erroNoGoogle = false;
+  if (!id) {
+    notFound();
+  }
+
+  const normalizedId = id.toUpperCase();
+
+  let categoria;
+
+  if (normalizedId.startsWith("GL-")) {
+    categoria = "GOOGLE";
+  } else if (normalizedId.startsWith("WH-")) {
+    categoria = "WHATSAPP";
+  } else if (normalizedId.startsWith("IN-")) {
+    categoria = "INSTAGRAM";
+  } else {
+    notFound();
+  }
+
+  const snapshot = await db
+    .collection("PLACAS")
+    .doc(categoria)
+    .collection("links")
+    .doc(normalizedId)
+    .get();
+
+  if (!snapshot.exists) {
+    notFound();
+  }
+
+  const data = snapshot.data();
+
+  if (!data?.ativo || !data?.destino) {
+    notFound();
+  }
+
+  // Segurança básica contra destinos inválidos
+  let url;
 
   try {
-    const res = await fetch(csvUrl, { next: { revalidate: 60 } });
-    const text = await res.text();
-
-    const linhas = text.split('\n');
-
-    for (let i = 1; i < linhas.length; i++) {
-      const colunas = linhas[i].split(',');
-      
-      const rowId = colunas[0]?.trim();
-      const rowDestino = colunas[1]?.trim();
-
-      if (rowId === id) {
-        linkDestino = rowDestino;
-        break; 
-      }
-    }
-  } catch (error) {
-    // Se o Google Sheets estiver fora do ar ou o link falhar
-    erroNoGoogle = true;
+    url = new URL(data.destino);
+  } catch {
+    notFound();
   }
 
-  // IMPORTANTE: O redirect obrigatóriamente tem que ficar de fora do try...catch
-  if (linkDestino && linkDestino.startsWith('http')) {
-    redirect(linkDestino);
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    notFound();
   }
 
-  // TELAS DE AVISO (Para não dar erro 404)
-  if (erroNoGoogle) {
-    return (
-      <div style={{ textAlign: 'center', marginTop: '100px', fontFamily: 'sans-serif' }}>
-        <h2>Ocorreu um erro no servidor.</h2>
-        <p>Não foi possível conectar ao banco de dados agora.</p>
-      </div>
-    );
-  }
-
-  // Se o ID não existe na planilha ou a célula do link está vazia
-  return (
-    <div style={{ textAlign: 'center', marginTop: '100px', fontFamily: 'sans-serif' }}>
-      <h2>Placa aguardando configuração</h2>
-      <p>A placa ID <strong>{id}</strong> ainda não foi ativada pelo cliente.</p>
-    </div>
-  );
+  redirect(url.toString());
 }
